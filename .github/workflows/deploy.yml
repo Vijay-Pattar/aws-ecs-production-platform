@@ -32,6 +32,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Validate OIDC variables
+        run: |
+          if [ -z "${{ vars.AWS_DEPLOY_ROLE }}" ]; then
+            echo "::error::Repository variable AWS_DEPLOY_ROLE is not set."
+            exit 1
+          fi
+          echo "Using AWS_DEPLOY_ROLE=${{ vars.AWS_DEPLOY_ROLE }}"
+          echo "Using AWS_REGION=${{ vars.AWS_REGION }}"
+
       - name: Configure AWS credentials (OIDC — no static keys)
         uses: aws-actions/configure-aws-credentials@v4
         with:
