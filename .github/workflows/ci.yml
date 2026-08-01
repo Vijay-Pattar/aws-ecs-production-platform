@@ -1,0 +1,68 @@
+name: CI
+
+# Lint + test the app and validate Terraform on every push/PR. No AWS needed.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  app:
+    name: Lint & Test (app)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install dev deps
+        working-directory: app
+        run: pip install -r requirements-dev.txt
+      - name: Lint (ruff)
+        working-directory: app
+        run: ruff check .
+      - name: Static security scan (bandit)
+        working-directory: app
+        run: bandit -r app.py
+      - name: Tests with coverage
+        working-directory: app
+        run: pytest --cov=app --cov-report=term-missing --cov-fail-under=80
+
+  terraform:
+    name: Validate Terraform
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+      - name: fmt check
+        working-directory: terraform
+        run: terraform fmt -check -recursive
+      - name: init (no backend) + validate
+        working-directory: terraform
+        run: |
+          terraform init -backend=false
+          terraform validate
+
+  build:
+    name: Build image (no push)
+    runs-on: ubuntu-latest
+    needs: [app, terraform]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          tags: aws-ecs-app:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

@@ -1,0 +1,13 @@
+# CodeDeploy AppSpec for ECS blue/green.
+# Tells CodeDeploy which task definition + container/port to shift traffic to.
+# <TASK_DEFINITION> is a placeholder CodeDeploy fills in at deploy time.
+version: 0.0
+Resources:
+  - TargetService:
+      Type: AWS::ECS::Service
+      Properties:
+        TaskDefinition: <TASK_DEFINITION>
+        LoadBalancerInfo:
+          ContainerName: "app"
+          ContainerPort: 8000
+        PlatformVersion: "LATEST"

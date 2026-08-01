@@ -1,0 +1,110 @@
+name: Deploy (ECS blue/green via CodeDeploy)
+
+# Builds the image, pushes to ECR, and triggers a CodeDeploy blue/green deploy.
+# Authenticates to AWS with OIDC — NO static access keys stored in GitHub.
+#
+# Setup before first run (repo Settings → Secrets and variables → Actions → Variables):
+#   AWS_DEPLOY_ROLE  = the github_deploy_role_arn Terraform output
+#   AWS_REGION       = ap-south-1
+# (These are non-secret ARNs/region → use repo *Variables*, not Secrets.)
+
+on:
+  push:
+    branches: [main]
+    paths: ["app/**", "Dockerfile", "deploy/**", ".github/workflows/deploy.yml"]
+  workflow_dispatch:
+    inputs:
+      error_rate:
+        description: "ERROR_RATE for this deploy (use 0.4 to demo auto-rollback)"
+        default: "0.0"
+
+permissions:
+  id-token: write   # REQUIRED for OIDC
+  contents: read
+
+env:
+  PROJECT: ecs-prod-platform
+  AWS_REGION: ${{ vars.AWS_REGION }}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC — no static keys)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build & push image
+        id: build
+        env:
+          REGISTRY: ${{ steps.ecr.outputs.registry }}
+        run: |
+          TAG="${GITHUB_SHA::7}"
+          IMAGE="$REGISTRY/${PROJECT}-app:$TAG"
+          docker build -t "$IMAGE" --build-arg APP_VERSION="$TAG" .
+          docker push "$IMAGE"
+          echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Render new task definition
+        id: taskdef
+        env:
+          IMAGE: ${{ steps.build.outputs.image }}
+          ERROR_RATE: ${{ github.event.inputs.error_rate || '0.0' }}
+        run: |
+          # Pull the current task def, swap image + ERROR_RATE, register a new revision.
+          aws ecs describe-task-definition --task-definition ${PROJECT}-app \
+            --query taskDefinition > taskdef.json
+          python - "$IMAGE" "$ERROR_RATE" <<'PY'
+          import json, sys
+          image, err = sys.argv[1], sys.argv[2]
+          d = json.load(open("taskdef.json"))
+          for k in ["taskDefinitionArn","revision","status","requiresAttributes",
+                    "compatibilities","registeredAt","registeredBy"]:
+              d.pop(k, None)
+          c = d["containerDefinitions"][0]
+          c["image"] = image
+          for e in c["environment"]:
+              if e["name"] == "ERROR_RATE": e["value"] = err
+          json.dump(d, open("taskdef.clean.json","w"))
+          PY
+          ARN=$(aws ecs register-task-definition \
+            --cli-input-json file://taskdef.clean.json \
+            --query taskDefinition.taskDefinitionArn --output text)
+          echo "arn=$ARN" >> "$GITHUB_OUTPUT"
+
+      - name: Deploy to ECS (rolling, with circuit-breaker + alarm auto-rollback)
+        env:
+          TASKDEF_ARN: ${{ steps.taskdef.outputs.arn }}
+        run: |
+          # Point the service at the new task def. The ECS deployment controller
+          # rolls tasks gradually; the circuit breaker + 5xx alarm (configured in
+          # Terraform) auto-roll-back to the previous version if it goes bad.
+          aws ecs update-service \
+            --cluster ${PROJECT}-cluster \
+            --service ${PROJECT}-svc \
+            --task-definition "$TASKDEF_ARN" \
+            --query "service.deployments[0].{status:status,taskDef:taskDefinition}"
+
+      - name: Wait for deployment to stabilize (fails if rolled back)
+        run: |
+          # `services-stable` waits until the rollout settles. If the circuit
+          # breaker rolled back, the running task def won't match the one we
+          # pushed → we detect that and fail the job loudly.
+          aws ecs wait services-stable --cluster ${PROJECT}-cluster --services ${PROJECT}-svc
+          RUNNING=$(aws ecs describe-services --cluster ${PROJECT}-cluster \
+            --services ${PROJECT}-svc --query "services[0].taskDefinition" --output text)
+          echo "Now running: $RUNNING"
+          if [ "$RUNNING" != "${{ steps.taskdef.outputs.arn }}" ]; then
+            echo "::error::Deployment was auto-rolled-back (running task def != deployed)."
+            exit 1
+          fi
+          echo "Deployment succeeded and is stable."

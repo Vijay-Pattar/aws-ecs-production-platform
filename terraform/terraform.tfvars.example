@@ -1,0 +1,11 @@
+# Copy this file to terraform.tfvars and fill in your values.
+# terraform.tfvars is git-ignored (it can contain your email / choices).
+
+# Your email — receives budget alerts AND CloudWatch alarm notifications.
+budget_alert_email = "you@example.com"
+
+# Optional overrides (defaults shown):
+# project          = "ecs-prod-platform"
+# region           = "ap-south-1"
+# budget_limit_usd = 10
+# desired_count    = 2
