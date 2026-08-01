@@ -35,6 +35,8 @@ jobs:
         run: bandit -r app.py
       - name: Tests with coverage
         working-directory: app
+        env:
+          PYTHONPATH: ${{ github.workspace }}/app
         run: pytest --cov=app --cov-report=term-missing --cov-fail-under=80
 
   terraform:
