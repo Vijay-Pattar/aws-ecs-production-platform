@@ -47,6 +47,11 @@ jobs:
           role-to-assume: ${{ vars.AWS_DEPLOY_ROLE }}
           aws-region: ${{ env.AWS_REGION }}
 
+      - name: Verify assumed role
+        run: |
+          echo "AWS_DEPLOY_ROLE=${{ vars.AWS_DEPLOY_ROLE }}"
+          aws sts get-caller-identity --output json || (echo "ERROR: failed to assume role via OIDC" && exit 1)
+
       - name: Login to ECR
         id: ecr
         uses: aws-actions/amazon-ecr-login@v2
