@@ -1,6 +1,6 @@
 # AWS Production Platform — ECS Fargate
 
-[![CI](https://github.com/YOUR_USERNAME/aws-ecs-production-platform/actions/workflows/ci.yml/badge.svg)](https://github.com/YOUR_USERNAME/aws-ecs-production-platform/actions/workflows/ci.yml)
+CI workflow is configured in [.github/workflows/ci.yml](.github/workflows/ci.yml) and will appear once the repository is created and Actions are enabled.
 
 A production-style container platform on **AWS**, provisioned entirely with
 **Terraform**: a containerized service on **ECS Fargate** behind an **ALB**, with
@@ -126,11 +126,3 @@ COST.md              Billable resources + teardown proof
 - **[COST.md](COST.md)** — cost + teardown
 
 ---
-
-## Before you publish this repo (checklist)
-
-- [ ] Replace `YOUR_USERNAME` in the CI badge, `terraform/oidc.tf` (`github_repo`),
-      and `.github/workflows/deploy.yml` variables.
-- [ ] `terraform.tfvars` (your email) is git-ignored — keep it that way.
-- [ ] No AWS keys anywhere — CI uses OIDC; local uses `aws configure`.
-- [ ] Confirm `terraform destroy` completed (COST.md checklist).

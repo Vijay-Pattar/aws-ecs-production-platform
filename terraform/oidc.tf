@@ -6,13 +6,13 @@
 # AWS trusts GitHub's OIDC provider and issues TEMPORARY credentials, scoped to
 # THIS repo only. Nothing long-lived to leak. This is a strong security signal.
 #
-# Set var.github_repo to "your-username/aws-ecs-production-platform" before use.
+# Set var.github_repo to your actual GitHub owner/name before use.
 # ============================================================================
 
 variable "github_repo" {
   description = "GitHub repo allowed to assume the deploy role, as owner/name"
   type        = string
-  default     = "YOUR_USERNAME/aws-ecs-production-platform"
+  default     = "Vijay-Pattar/aws-ecs-production-platform"
 }
 
 # Register GitHub as an OIDC identity provider in your account.
